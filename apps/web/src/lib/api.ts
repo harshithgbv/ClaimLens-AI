@@ -21,6 +21,7 @@ import {
   DocRequestData,
   DecisionData,
   RiskAssessment,
+  RiskPriority,
   DuplicateMatch,
   AuditLog,
   AuditLogParams,
@@ -287,32 +288,45 @@ export function mapBackendClaim(c: any): ClaimDetail {
   };
 }
 
+function mapBackendRiskAssessment(ra: any, claimId?: string): RiskAssessment {
+  return {
+    id: ra.id,
+    claimId: ra.claim_id || ra.claimId || claimId || '',
+    riskScore: Number(ra.score ?? ra.riskScore ?? 0),
+    priority: (ra.priority || 'low') as RiskPriority,
+    rulesTriggered: Number(
+      ra.triggered_rule_count ??
+      ra.rulesTriggered ??
+      (ra.findings || []).length
+    ),
+    assessedAt: ra.assessed_at || ra.assessedAt || new Date().toISOString(),
+    findings: (ra.findings || []).map((f: any) => ({
+      id: f.id,
+      ruleId: f.rule_id || f.ruleId,
+      ruleName: f.rule_name || f.ruleName,
+      severity: (f.severity || 'low') as RiskPriority,
+      scoreContribution: Number(
+        f.score_contribution ?? f.scoreContribution ?? 0
+      ),
+      explanation: f.explanation,
+      evidence:
+        typeof f.evidence === 'string'
+          ? JSON.parse(f.evidence)
+          : (f.evidence || {}),
+      isFalsePositive: Boolean(
+        f.is_false_positive ?? f.isFalsePositive ?? false
+      ),
+      falsePositiveReason:
+        f.false_positive_reason || f.falsePositiveReason,
+    })),
+  };
+}
 export function mapBackendInvestigatorClaim(c: any): InvestigatorClaimDetail {
   const base = mapBackendClaim(c);
   const ra = c.risk_assessment || c.riskAssessment;
-  let riskAssessment: RiskAssessment | undefined = undefined;
-  if (ra) {
-    riskAssessment = {
-      id: ra.id,
-      claimId: ra.claim_id || ra.claimId || c.id,
-      riskScore: Number(ra.score ?? ra.riskScore ?? 0),
-      priority: (ra.priority || 'low') as any,
-      rulesTriggered: Number(ra.triggered_rule_count ?? ra.rulesTriggered ?? (ra.findings || []).length),
-      assessedAt: ra.assessed_at || ra.assessedAt || new Date().toISOString(),
-      findings: (ra.findings || []).map((f: any) => ({
-        id: f.id,
-        ruleId: f.rule_id || f.ruleId,
-        ruleName: f.rule_name || f.ruleName,
-        severity: (f.severity || 'low') as any,
-        scoreContribution: Number(f.score_contribution ?? f.scoreContribution ?? 0),
-        explanation: f.explanation,
-        evidence: typeof f.evidence === 'string' ? JSON.parse(f.evidence) : (f.evidence || {}),
-        isFalsePositive: Boolean(f.is_false_positive ?? f.isFalsePositive ?? false),
-        falsePositiveReason: f.false_positive_reason || f.falsePositiveReason,
-      })),
-    };
-  }
-
+  const riskAssessment: RiskAssessment | undefined = ra
+    ? mapBackendRiskAssessment(ra, c.id)
+    : undefined;
   const dupMatches = (c.duplicate_matches || c.duplicateMatches || []).map((d: any) => ({
     id: d.id,
     claim1Id: d.claim_id_1 || d.claim1Id,
@@ -1030,42 +1044,44 @@ export const investigatorAPI = {
       () => undefined
     );
   },
-
   async rescreenClaim(claimId: string): Promise<RiskAssessment> {
     return executeApiCall(
-      () => apiClient.post(`/investigator/claims/${claimId}/rescreen`),
+      async () => {
+        const res = await apiClient.post(
+          `/investigator/claims/${claimId}/rescreen`
+        );
+
+        return {
+          data: mapBackendRiskAssessment(res.data, claimId),
+        };
+      },
       () => mockInvestigatorClaimDetail.riskAssessment!
     );
   },
-
   async getDuplicates(): Promise<DuplicateMatch[]> {
     return executeApiCall(
       () => apiClient.get('/investigator/duplicates'),
       () => mockDuplicates
     );
   },
-
   async resolveDuplicate(duplicateId: string, status: string, notes?: string): Promise<void> {
     return executeApiCall(
       () => apiClient.post(`/investigator/duplicates/${duplicateId}/resolve`, { status, notes }),
       () => undefined
     );
   },
-
   async getClaimDuplicates(claimId: string): Promise<DuplicateMatch[]> {
     return executeApiCall(
       () => apiClient.get(`/investigator/claims/${claimId}/duplicates`),
       () => mockDuplicates.filter(d => d.claim1Id === claimId || d.claim2Id === claimId)
     );
   },
-
   async markFalsePositive(findingId: string, reason: string): Promise<void> {
     return executeApiCall(
       () => apiClient.post(`/investigator/findings/${findingId}/false-positive`, { reason }),
       () => undefined
     );
   },
-
   async getAuditLogs(params?: AuditLogParams): Promise<PaginatedResponse<AuditLog>> {
     return executeApiCall(
       () => apiClient.get('/investigator/audit-logs', { params }),

@@ -157,34 +157,32 @@ export default function InvestigatorClaimDetailPage() {
   };
 
   // Mark False Positive
+  // Mark False Positive
   const handleConfirmFalsePositive = async () => {
     if (!falsePositiveFindingId || !falsePositiveReason.trim()) return;
 
     try {
-      await investigatorAPI.markFalsePositive(falsePositiveFindingId, falsePositiveReason);
-      setClaim((prev) => {
-        if (!prev || !prev.riskAssessment) return prev;
-        return {
-          ...prev,
-          riskAssessment: {
-            ...prev.riskAssessment,
-            findings: prev.riskAssessment.findings.map((f) =>
-              f.id === falsePositiveFindingId
-                ? { ...f, isFalsePositive: true, falsePositiveReason }
-                : f
-            ),
-          },
-        };
-      });
+      await investigatorAPI.markFalsePositive(
+        falsePositiveFindingId,
+        falsePositiveReason
+      );
+
+      await fetchDetail();
+
       toast({
         title: 'Marked as False Positive',
         description: 'Anomaly cleared and logged in system compliance audit.',
         type: 'success',
       });
+
       setFalsePositiveFindingId(null);
       setFalsePositiveReason('');
     } catch (err: any) {
-      toast({ title: 'Action failed', description: err.message, type: 'error' });
+      toast({
+        title: 'Action failed',
+        description: err.message,
+        type: 'error',
+      });
     }
   };
 
